@@ -195,7 +195,7 @@ func (self *task) finalize() {
   defer close(self.done)
 
   if self.err != nil {
-    self.err = fmt.Errorf(`task %q finished with error: %w`, self.fun.ShortName(), self.err)
+    self.err = fmt.Errorf(`task %q erred: %w`, self.fun.ShortName(), self.err)
     return
   }
 
@@ -203,7 +203,7 @@ func (self *task) finalize() {
 
   err, _ := val.(error)
   if err != nil {
-    self.err = fmt.Errorf(`task %q panicked with error: %w`, self.fun.ShortName(), err)
+    self.err = fmt.Errorf(`task %q panicked: %w`, self.fun.ShortName(), err)
     return
   }
 

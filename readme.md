@@ -117,7 +117,7 @@ go run . a
 
 * Gtg does not require an external CLI to function, and doesn't need separate installation. Just `go run .`. This will auto-install all dependencies including Gtg.
 
-* Gtg has no special build system. No accidental conflicts in imports and declarations. No accidental log suppression or log spam. No need for special system variables. No multi-GiB hidden cache folder stuck forever on your system.
+* Mage has a build system. Gtg is just a library. No accidental conflicts in imports and declarations. No accidental log suppression or log spam. No need for special system variables. No multi-GiB hidden cache folder stuck forever on your system.
 
 * Gtg has no implicit control flow. Just handle your errors. `Must` is conventional, explicit, and optional.
 

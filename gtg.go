@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"time"
 	"unsafe"
 )
 
@@ -300,4 +301,44 @@ func (self TaskFunc) equalTask(other TaskFunc) bool {
 
 func (self TaskFunc) equal(other TaskFunc) bool {
 	return self.id() == other.id()
+}
+
+/*
+Convenience function for CLI. Logs execution time of a task function. Usage:
+
+	func SomeTask(Task) error {
+		defer TaskTiming(SomeTask)()
+		return nil
+	}
+
+Output:
+
+	[SomeTask] starting
+	[SomeTask] done in 1μs
+*/
+func TaskTiming(fun TaskFunc) func() {
+	return Timing(fun.ShortName())
+}
+
+/*
+Convenience function for CLI. Logs execution time of an arbitrary function.
+Usage:
+
+	func SomeFunc() {
+		defer Timing("some_task")()
+	}
+
+Output:
+
+	[some_task] starting
+	[some_task] done in 1μs
+*/
+func Timing(name string) func() {
+	start := time.Now()
+	_, _ = fmt.Fprintf(logOutput, "[%v] starting\n", name)
+
+	return func() {
+		end := time.Now()
+		_, _ = fmt.Fprintf(logOutput, "[%v] done in %v\n", name, end.Sub(start))
+	}
 }
