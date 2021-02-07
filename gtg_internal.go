@@ -3,13 +3,14 @@ package gtg
 import (
   "context"
   "fmt"
+  "io"
   "os"
   "reflect"
   "strings"
   "sync"
 )
 
-var logOutput = os.Stderr
+var logOutput io.Writer = os.Stderr
 
 // May be made public when adding a `ChooseMany` function.
 type taskFuncs []TaskFunc
@@ -63,8 +64,8 @@ func (self taskFuncs) shortNames() []string {
 }
 
 /*
-This is not exported because: (1) it's extremely trivial; (2) it could lead to
-gotchas when confused with `Wait`.
+Not exported because: (1) it's extremely trivial; (2) it could lead to gotchas
+when confused with `Wait`.
 */
 func waitFor(ctx context.Context) error {
   <-ctx.Done()
@@ -91,8 +92,17 @@ func dedup(funs []TaskFunc) (taskFuncs, error) {
 }
 
 /*
-TODO: because tasks are few and never removed, storing `tasks` as a slice rather
-than a map could be more efficient. Measure first.
+Task group implementation. Every task is created within a group, and embeds a
+reference to it.
+
+Because a task group has a context, we could easily make it implement `Task` by
+embedding this context. This would allow us to eliminate the `TaskGroup`
+interface. The reason we don't is because it's unclear what constitutes `Done()`
+and `Err()` for a task group. Should it simply delegate to the context, or
+should it wait for the completion of every task? Should it return the error of
+the first task, or accumulate them all? Clearly just embedding the context would
+not be enough. We already provide `Start()` and `Run()` whose idea of `Done()`
+and `Err()` is tied to the "main" task, which should be enough.
 */
 type taskGroup struct {
   ctx context.Context
@@ -100,7 +110,7 @@ type taskGroup struct {
   tasks map[uintptr]*task
 }
 
-func (self *taskGroup) task(fun TaskFunc) *task {
+func (self *taskGroup) Task(fun TaskFunc) Task {
   self.Lock()
   defer self.Unlock()
 
@@ -114,16 +124,20 @@ func (self *taskGroup) task(fun TaskFunc) *task {
     self.tasks = map[uintptr]*task{}
   }
 
-  created := &task{
-    ctx:   self.ctx,
-    group: self,
-    fun:   fun,
-    done:  make(chan struct{}),
-  }
+  created := newTask(self.ctx, self, fun)
   self.tasks[id] = created
 
   go created.run()
   return created
+}
+
+func newTask(ctx context.Context, group *taskGroup, fun TaskFunc) *task {
+  return &task{
+    ctx:       ctx,
+    taskGroup: group,
+    fun:       fun,
+    done:      make(chan struct{}),
+  }
 }
 
 // Allows embedding under a private field name. Shouldn't be used in other
@@ -132,37 +146,41 @@ type ctx = context.Context
 
 type task struct {
   ctx
-  group   *taskGroup
+  *taskGroup
   fun     TaskFunc
   done    chan struct{}
   errLock sync.Mutex
   err     error
 }
 
-// `context.Context.Done`.
-func (self *task) Done() <-chan struct{} {
-  return self.done
-}
-
-// `context.Context.Err`.
+// Override `context.Context.Err()`.
 func (self *task) Err() error {
   self.errLock.Lock()
   defer self.errLock.Unlock()
   return self.err
 }
 
-func (self *task) Task(fun TaskFunc) Task {
-  return self.group.task(fun)
+// Override `context.Context.Done()`.
+func (self *task) Done() <-chan struct{} {
+  return self.done
 }
 
 // Must be called exactly once.
 func (self *task) run() {
   defer self.finalize()
 
+  // A view of the task from the "inside".
+  err := self.fun(struct {
+    ctx
+    *taskGroup
+  }{
+    self.ctx,
+    self.taskGroup,
+  })
+
   self.errLock.Lock()
   defer self.errLock.Unlock()
-
-  self.err = self.fun(self)
+  self.err = err
 }
 
 /*
@@ -208,18 +226,18 @@ following:
 The implementation is somewhat complex and inefficient. TODO improve.
 */
 type waitGroup struct {
-  tasks []context.Context
+  tasks []Task
   cases []reflect.SelectCase
 }
 
 func makeWaitGroup(size int) waitGroup {
   return waitGroup{
-    tasks: make([]context.Context, 0, size),
+    tasks: make([]Task, 0, size),
     cases: make([]reflect.SelectCase, 0, size),
   }
 }
 
-func (self *waitGroup) add(task context.Context) {
+func (self *waitGroup) add(task Task) {
   self.tasks = append(self.tasks, task)
   self.cases = append(self.cases, reflect.SelectCase{
     Dir:  reflect.SelectRecv,
@@ -239,7 +257,7 @@ func (self *waitGroup) wait() error {
   return nil
 }
 
-func (self *waitGroup) remove(index int) context.Context {
+func (self *waitGroup) remove(index int) Task {
   task := self.tasks[index]
 
   tasks := self.tasks

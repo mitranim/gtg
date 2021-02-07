@@ -22,26 +22,48 @@ import (
 )
 
 /*
-Describes a task, which is a superset of `context.Context` but belongs to a task
-group or task graph. Allows to retrieve OTHER tasks from the same group.
-
-The method `Task` retrieves an existing task, or creates a new task, starting it
-on another goroutine. Tasks are keyed by the identity of the task function. See
-`TaskFunc` for the explanation of identity.
+Describes a group of tasks. Able to deduplicate tasks, identifying them by the
+task function. The method `Task()` returns an existing task (possibly already
+finished) corresponding to the given function. If no such task exists, `Task()`
+creates it, launching the function on another goroutine, and returns the
+newly-created task.
 */
-type Task interface {
-	context.Context
+type TaskGroup interface {
 	Task(TaskFunc) Task
 }
 
 /*
+Describes a task, which is a superset of `context.Context` but also belongs to a
+task group; see the `TaskGroup` interface. Every task in the group provides
+access to the entire group, able to retrieve and create tasks in it.
+
+Gtg has two "views" of a task: from the "inside" (what's passed to a task
+function), and from the "outside" (as returned by `TaskGroup.Task`).
+
+The `Task` passed to its task function has no special properties: its context is
+a normal `context.Context` instance.
+
+However, when seen from the "outside", a `Task` does not behave like a normal
+context. Instead, its `Done()` and `Err()` are determined entirely by its
+function. The channel returned by `Done()` is closed when it returns or panics,
+and the error returned by `Err()` is the function's result or panic. Honoring
+the original context's cancellation is entirely up to the task function. This
+behavior allows external callers to observe a task's completion and result,
+which is crucial to task coordination in Gtg.
+*/
+type Task interface {
+	context.Context
+	TaskGroup
+}
+
+/*
 Creates a new task group/graph. Runs `fun` as the first task in the group, on
-another goroutine, and returns the same task.
+another goroutine, and returns that first task.
 
 Honoring context cancellation is up to the task function.
 */
 func Start(ctx context.Context, fun TaskFunc) Task {
-	return (&taskGroup{ctx: ctx}).task(fun)
+	return (&taskGroup{ctx: ctx}).Task(fun)
 }
 
 // Shortcut for `Must(Run())`.
@@ -53,7 +75,7 @@ func MustRun(ctx context.Context, fun TaskFunc) {
 Creates a new task group/graph. Runs `fun` as the first task in the group,
 blocks until it finishes, and returns its error.
 
-When the "main" task finishes, the context provided to all tasks in this group
+When this "main" task finishes, the context provided to all tasks in this group
 is canceled.
 */
 func Run(ctx context.Context, fun TaskFunc) error {
@@ -63,16 +85,16 @@ func Run(ctx context.Context, fun TaskFunc) error {
 }
 
 // Shortcut for `Must(Wait())`.
-func MustWait(task Task, fun TaskFunc) {
-	Must(Wait(task, fun))
+func MustWait(group TaskGroup, fun TaskFunc) {
+	Must(Wait(group, fun))
 }
 
 /*
-Finds or starts the other task in the current group (via `task.Task(fun)`) and
-waits for it on the current goroutine, returning its error.
+Finds or starts the task in the given group identified by the given function,
+and waits for it on the current goroutine, returning its error.
 */
-func Wait(task Task, fun TaskFunc) error {
-	return waitFor(task.Task(fun))
+func Wait(group TaskGroup, fun TaskFunc) error {
+	return waitFor(group.Task(fun))
 }
 
 /*
@@ -242,18 +264,6 @@ function have different identities. Identity is used for deduplication.
 */
 type TaskFunc func(Task) error
 
-func (self TaskFunc) equalTaskName(name string) bool {
-	return strings.EqualFold(name, self.ShortName())
-}
-
-func (self TaskFunc) equalTask(other TaskFunc) bool {
-	return self.equal(other) || self.equalTaskName(other.ShortName())
-}
-
-func (self TaskFunc) equal(other TaskFunc) bool {
-	return self.id() == other.id()
-}
-
 /*
 Returns the function's name without the package path:
 
@@ -271,7 +281,23 @@ func (self TaskFunc) longName() string {
 /*
 Function identity, used as a task key. Might be fatally flawed. Go really
 doesn't want us to compare functions by pointer.
+
+Note: we're not using `reflect.ValueOf(self).Pointer()` because it returns the
+same pointer for every instance of any given closure, and we need to tell them
+apart.
 */
 func (self TaskFunc) id() uintptr {
 	return *(*uintptr)(unsafe.Pointer(&self))
+}
+
+func (self TaskFunc) equalTaskName(name string) bool {
+	return strings.EqualFold(name, self.ShortName())
+}
+
+func (self TaskFunc) equalTask(other TaskFunc) bool {
+	return self.equal(other) || self.equalTaskName(other.ShortName())
+}
+
+func (self TaskFunc) equal(other TaskFunc) bool {
+	return self.id() == other.id()
 }
