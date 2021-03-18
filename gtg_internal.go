@@ -105,14 +105,14 @@ not be enough. We already provide `Start()` and `Run()` whose idea of `Done()`
 and `Err()` is tied to the "main" task, which should be enough.
 */
 type taskGroup struct {
-  ctx context.Context
-  sync.Mutex
+  ctx   context.Context
+  lock  sync.Mutex
   tasks map[uintptr]*task
 }
 
 func (self *taskGroup) Task(fun TaskFunc) Task {
-  self.Lock()
-  defer self.Unlock()
+  self.lock.Lock()
+  defer self.lock.Unlock()
 
   id := fun.id()
   existing := self.tasks[id]
