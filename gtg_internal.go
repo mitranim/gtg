@@ -96,13 +96,14 @@ Task group implementation. Every task is created within a group, and embeds a
 reference to it.
 
 Because a task group has a context, we could easily make it implement `Task` by
-embedding this context. This would allow us to eliminate the `TaskGroup`
-interface. The reason we don't is because it's unclear what constitutes `Done()`
-and `Err()` for a task group. Should it simply delegate to the context, or
-should it wait for the completion of every task? Should it return the error of
-the first task, or accumulate them all? Clearly just embedding the context would
-not be enough. We already provide `Start()` and `Run()` whose idea of `Done()`
-and `Err()` is tied to the "main" task, which should be enough.
+embedding this context. This would allow us to combine `Task` and `TaskGroup`
+into one interface. The reason we don't is because it's unclear what
+constitutes `Done()` and `Err()` for a task group. Should it simply delegate to
+the context, or should it wait for the completion of every task? Should it
+return the error of the first task, or accumulate them all? What about an empty
+task group with no tasks, is it done or not? Clearly just embedding the context
+would not be enough. We already provide `Start()` and `Run()` whose idea of
+`Done()` and `Err()` is tied to the "main" task, which should be enough.
 */
 type taskGroup struct {
   ctx   context.Context

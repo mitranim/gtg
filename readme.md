@@ -6,9 +6,23 @@ Good for CLI task orchestration, serving as a Go-based alternative to Make (see 
 
 API documentation: https://pkg.go.dev/github.com/mitranim/gtg.
 
+Main concepts:
+
+```golang
+type Task interface {
+  context.Context
+  TaskGroup
+}
+
+type TaskGroup interface {
+  Task(TaskFunc) Task
+}
+
+type TaskFunc func(Task) error
+```
+
 ## TOC
 
-* [#Overview](#overview)
 * [#Usage](#usage)
   * [#CLI Usage](#cli-usage)
 * [#Comparisons](#comparisons)
