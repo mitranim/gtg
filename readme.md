@@ -129,11 +129,11 @@ go run . a
 
 * Mage is a CLI. Gtg is a library with CLI convenience features.
 
-* Gtg does not require an external CLI to function, and doesn't need separate installation. Just `go run .`. This will auto-install all dependencies including Gtg.
+* Gtg does not require an external CLI to function, and doesn't need separate installation. Just `go run .` which auto-installs all dependencies including Gtg.
 
 * Mage has a build system. Gtg is just a library. No accidental conflicts in imports and declarations. No accidental log suppression or log spam. No need for special system variables. No multi-GiB hidden cache folder stuck forever on your system.
 
-* Gtg has no implicit control flow. Just handle your errors. `Must` is conventional, explicit, and optional.
+* Gtg has no implicit control flow. Just handle your errors. It provides `Must` shortcuts which are optional, explicit, and conventional.
 
 * Gtg is compatible with external watchers such as [Gow](https://github.com/mitranim/gow).
 
@@ -149,7 +149,7 @@ go run . a
 
 * `Choose` and `RunCmd` allow to run only one task. We should provide shortcuts for selecting N tasks, which can be run concurrently via `Par` or serially via `Ser`.
 
-* `Ser` should produce an error when the requested tasks happen to run in a different order due to some other tasks. Currently this is unchecked.
+* `Ser` should produce an error when other tasks cause the requested tasks to run in a different order. Currently this is unchecked.
 
 ## License
 
